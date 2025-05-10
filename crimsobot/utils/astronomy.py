@@ -7,10 +7,9 @@ import tabulate
 from geopy.geocoders import Nominatim
 from geopy.location import Location
 from lxml import html
-from pyshorteners import Shortener
 from timezonefinder import TimezoneFinder
 
-from config import BITLY_TOKEN, MAPQUEST_API_KEY
+from config import TOMTOM_API_KEY
 
 
 ISSPass = namedtuple(
@@ -104,32 +103,55 @@ def whereis(query: str) -> Tuple[Optional[float], Optional[float], Optional[str]
     lat = round(location.latitude, 6)
     lon = round(location.longitude, 6)
 
-    # get bounding box from raw dict
+    # Calculate appropriate zoom level based on the bounding box
+    # TomTom zoom levels range from 0 (entire world) to 22 (building details)
+    # We'll use a value between 1 and 10 as specified
+    
+    # Get bounding box from raw dict
     bounding = location.raw['boundingbox']
+    
+    # Calculate the size of the area
+    lat_diff = abs(float(bounding[1]) - float(bounding[0]))
+    lon_diff = abs(float(bounding[3]) - float(bounding[2]))
+    
+    # Determine zoom level based on the size of the area
+    # Smaller areas (smaller differences) get higher zoom levels
+    area_size = max(lat_diff, lon_diff)
+    
+    # Map area size to zoom level (1-10)
+    # These thresholds can be adjusted based on testing
+    if area_size > 20:
+        zoom = 1  # Very large area (continent)
+    elif area_size > 10:
+        zoom = 2
+    elif area_size > 5:
+        zoom = 3
+    elif area_size > 2:
+        zoom = 4
+    elif area_size > 1:
+        zoom = 5
+    elif area_size > 0.5:
+        zoom = 6
+    elif area_size > 0.2:
+        zoom = 7
+    elif area_size > 0.1:
+        zoom = 8
+    elif area_size > 0.05:
+        zoom = 9
+    else:
+        zoom = 10  # Very small area (neighborhood)
 
-    # get difference btw center and bounding box, and stretch (more if close, less if far)
-    dlat = (lat - float(bounding[0]))
-    stretch = 10 / dlat ** 0.3
-    dlat = (lat - float(bounding[0])) * stretch
-    dlon = (lon - float(bounding[2])) * stretch
-
-    # new bounding box
-    bound = [lat - dlat, lat + dlat, lon - dlon, lon + dlon]
-
-    # now the URL!
+    # TomTom API URL template
     url_template = (
-        'https://www.mapquestapi.com/staticmap/v5/map?'
-        'locations={},{}&boundingbox={},{},{},{}&type=dark&size=800,600@2x&key={}'
+        'https://api.tomtom.com/map/1/staticimage?'
+        'layer=basic&style=night&format=png&'
+        'key={}&zoom={}&center={},{}&width=1036&height=1036&language=NGT'
     )
+    
     url = url_template.format(
-        lat, lon,
-        bound[0], bound[2], bound[1], bound[3],
-        MAPQUEST_API_KEY
+        TOMTOM_API_KEY,
+        zoom,
+        lon, lat  # TomTom API expects longitude first, then latitude
     )
 
-    # return url
-    # bit.ly shortner
-    shortener = Shortener(api_key=BITLY_TOKEN)
-    short_url = shortener.bitly.short(url)  # type: str
-
-    return lat, lon, short_url
+    return lat, lon, url
